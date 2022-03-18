@@ -1,0 +1,111 @@
+#	Runtime parameters for the rigid solid body problem 
+
+#	Parameters for initial model
+
+#		Ambient pressure and density and inflow velocity.
+sim_rhoAmbient	= 1.0
+
+# define the domain
+xmin		= -5.
+xmax		=  5.
+ymin		= -4.
+ymax		=  4.
+zmin    = -4.
+zmax    =  4.
+
+# WIND
+sim_gamma_structure = 1.66667  # structure of polytropic envelope 
+gamma = 1.66667           # fluid compressibility
+sim_epsilon_grad = 1.000000000000000e+00
+
+#point mass
+ptmass = 7491444.7700725766  # 1/(2G) ... do not change!! 
+ptxpos = 0.0
+ptypos = 0.0
+ptzpos = 0.0
+
+# CENTRAL BC
+sim_radius = 1.000000000000000e+00
+sim_xCtr  = 0.0
+sim_yCtr  = 0.0
+sim_zCtr  = 0.0
+sim_bctype = 1    # 2 = sink, 1 = reflecting 
+sim_avgs = .true.
+sim_avgs_radius = 2.d0
+sim_avgs_mult = 1.d0
+sim_bdry_reflect = .true.
+sim_presfactor = 1.d-3
+
+# Binary Parameters
+sim_q = 1.000000000000000e-01
+
+#	Computational volume parameters
+
+#		Grid geometry
+
+geometry = "cartesian"
+
+#		Size of computational volume
+
+Nblockx = 20
+Nblocky	= 16
+Nblockz = 16
+
+#		Boundary conditions
+xl_boundary_type = "user"
+xr_boundary_type = "diode"
+
+yl_boundary_type = "user"
+yr_boundary_type = "diode"
+
+zl_boundary_type = "diode"
+zr_boundary_type = "diode"
+
+#	Simulation (grid, time, I/O) parameters
+cfl		= 0.2
+lrefine_min = 1
+lrefine_max	= 11
+sim_max_ref_rad = 0. # factor times sim_radius
+
+gr_lrefineMaxRedDoByLogR = .true.
+gr_lrefineMaxRedRadiusFact = 0.3
+
+refine_var_1 = "bdry"
+refine_var_2 = "eint"
+
+basenm          = "acc_"
+#restart         = .true.
+#checkpointFileNumber = 24
+#checkpointFileIntervalStep          = 50
+checkpointFileIntervalTime          = 0.25
+plotFileIntervalTime          = 100000
+nend            = 100000000
+tmax            = 30
+eintSwitch     = 1.e-4
+#ref		= 1
+gr_sanitizeVerbosity = 1
+
+## -------------------------------------------------------------##
+###  SWITCHES SPECIFIC TO THE UNSPLIT HYDRO SOLVER               ##
+##   I. INTERPOLATION SCHEME:
+order          = 5      # Interpolation order (first/second/third/fifth order)
+slopeLimiter    = "hybrid"   # Slope limiters (minmod, mc, vanLeer, hybrid, limited)
+LimitedSlopeBeta= 1.     # Slope parameter for the "limited" slope by Toro
+charLimiting    = .true. # Characteristic limiting vs. Primitive limiting
+#
+use_avisc   = .true. # use artificial viscosity (originally for PPM)
+cvisc       = 0.1     # coefficient for artificial viscosity
+use_flattening      = .false. # use flattening (dissipative) (originally for PPM)
+use_steepening      = .false. # use contact steepening (originally for PPM)
+use_upwindTVD     = .false. # use upwind biased TVD slope for PPM (need nguard=6)
+#
+##       II. RIEMANN SOLVERS:
+RiemannSolver     = "HLLC"       # Roe, HLL, HLLC, LLF, Marquina
+entropy         = .false.     # Entropy fix for the Roe solver
+#
+##   III. STRONG SHOCK HANDELING SCHEME:
+shockDetect = .true.     # Shock Detect for numerical stability
+### -------------------------------------------------------------##
+
+
+use_3dFullCTU = .false.
