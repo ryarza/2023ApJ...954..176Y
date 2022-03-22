@@ -1,1 +1,0 @@
-`drag.h5` contains the drag coefficients we measured in our hydrodynamical simulations. The coefficients for ram pressure (`cp` in the file) and gravitational (`cg`) drag are stored as three-dimensional arrays. Array indexing is, in order: mass ratio, dimensionless density gradient, and ratio between geometrical and gravitational radii.
