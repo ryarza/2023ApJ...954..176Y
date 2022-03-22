@@ -3,6 +3,8 @@
 
 This repository contains the analysis and plotting code used in Yarza et al. 2022.
 
+Our [hydrodynamical simulation setup](https://github.com/ryarza/common-envelope-wind-tunnel) and [inspiral integration code](https://github.com/ryarza/engulfment-integrator) have their own repositories.
+
 ##### Contents
 
 ```bash
