@@ -1,9 +1,13 @@
 # Reproducibility repository for Yarza et al. 2022
-[<img src="https://badgen.net/badge/license/GPL%20v3%20or%20later/blue">](LICENSE)
 
-This repository contains the analysis and plotting code used in Yarza et al. 2022.
-
-Our [hydrodynamical simulation setup](https://github.com/ryarza/common-envelope-wind-tunnel) and [inspiral integration code](https://github.com/ryarza/engulfment-integrator) have their own repositories.
+| Item                                              | Hosted on |
+| ------                                            | ------ |
+| Main paper repository, analysis and plotting code | [GitLab (this repository, ryarza/planetary-engulfment-hydro)](https://gitlab.com/ryarza/planetary-engulfment-hydro/)                 |
+| FLASH hydrodynamics setup                         | [GitHub (ryarza/common-envelope-wind-tunnel)](https://github.com/ryarza/common-envelope-wind-tunnel)                        |
+| Inspiral integration code                         | [GitHub (ryarza/engulfment-integrator)](https://github.com/ryarza/engulfment-integrator)                              |
+| Python dependencies                               | [GitLab (ryarza/rytools)](https://gitlab.com/ryarza/rytools/)                    |
+| Data                                              | [10.5281/zenodo.6371752](https://doi.org/10.5281/zenodo.6371751) |
+| Paper                                             | [arXiv:2203.11227](https://arxiv.org/abs/2203.11227)                                         |
 
 ##### Contents
 
