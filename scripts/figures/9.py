@@ -59,9 +59,9 @@ ax.set_xlim(1e-1, 1e1)
 ax.set_ylim(1e36, 1e44)
 
 handles, labels = ax.get_legend_handles_labels()
-line = matplotlib.lines.Line2D([0], [0], color='black', label = 'Analytical drag')
+line = matplotlib.lines.Line2D([0], [0], color='black', ls = 'dashed', label = 'Analytical drag')
 handles.insert(0,line) 
-line = matplotlib.lines.Line2D([0], [0], color='black', ls = 'dashed', label = 'Numerical drag')
+line = matplotlib.lines.Line2D([0], [0], color='black', label = 'Numerical drag')
 handles.insert(0,line) 
 
 ax.legend(handles = handles, loc = 'lower left', ncol = 2)

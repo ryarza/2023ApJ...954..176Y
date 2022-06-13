@@ -7,14 +7,14 @@ parser.add_argument("-d", "--directory", help = "Data directory", required = Tru
 args = parser.parse_args()
 
 data_paths = {
-#    1: 'planets.csv',
-#    2: 'rgb_tip_profile.data',
-#    3: 'rgb_tip_profile.data',
-#    4: 'successful_ejection.h5',
-#    6: 'grid_1/',
-#    7: 'drag_coefficients/drag.h5',
-#    8: 'grid_2/',
-#    9: './',
+    1: 'planets.csv',
+    2: 'rgb_tip_profile.data',
+    3: 'rgb_tip_profile.data',
+    4: 'successful_ejection.h5',
+    6: 'grid_1/',
+    7: 'drag_coefficients/drag.h5',
+    8: 'grid_2/',
+    9: './',
     10: './'
 }
 
