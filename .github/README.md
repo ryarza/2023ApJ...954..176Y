@@ -6,7 +6,7 @@ This repository mirrors the <a href=https://codeberg.org/ryarza/planetary-engulf
 
 ---
 
-[![License](https://flat.badgen.net/badge/license/GPL%20v3%20or%20later/blue)](COPYING)
+[![License](https://flat.badgen.net/badge/license/GPL%20v3%20or%20later/blue)](../COPYING)
 [![arXiv](https://flat.badgen.net/badge/astro-ph.EP/2203.11227/701111)](https://arxiv.org/abs/2203.11227)
 
 
