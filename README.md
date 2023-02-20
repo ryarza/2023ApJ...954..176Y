@@ -16,17 +16,28 @@
 ```bash
 ├── COPYING
 ├── LICENSE
+├── README.md
 ├── parameter-files
 │   ├── flash
+│   │   ├── README.md
 │   │   └── flash.par
 │   └── mesa
 │       └── README.md
-├── README.md
 └── scripts
     ├── analysis
+    │   ├── compare_inspirals.py
+    │   ├── grid_compare_luminosities.py
+    │   ├── interpolate_drag_into_regular_grid.py
+    │   ├── measure_drag_coefficients.py
+    │   ├── outcomes.py
+    │   └── rp_over_ra_at_destruction.py
     └── figures
-        ├── 10.py
         ├── 1.py
+        ├── 10_and_11.py
+        ├── 12.py
+        ├── 13.py
+        ├── 14.py
+        ├── 15.py
         ├── 2.py
         ├── 3.py
         ├── 4.py
@@ -34,5 +45,4 @@
         ├── 7.py
         ├── 8.py
         ├── 9.py
-        └── make_all.py
 ```
