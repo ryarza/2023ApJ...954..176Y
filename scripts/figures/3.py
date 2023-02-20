@@ -1,92 +1,131 @@
-import numpy as np
-import mesa_reader as mr
-import matplotlib.pyplot as plt
-import rytools as rt
 import argparse
+import os
+import pathlib
+import matplotlib
+import numpy as np
+import rytools
+import rytools.planets
+import rytools.stars
+import unyt
 
-rt.plot.plottex()
-cgs = rt.units.get_cgs(source = 'MESA')
-
-r_of_m = rt.planets.mass_radius_relation()
+os.chdir(pathlib.Path(__file__).parent.parent)
+matplotlib.style.use('~/.config/matplotlib/ricardo.mplstyle')
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-i", "--inputdata", help = "Input file", required = True)
+parser.add_argument("-i", "--inputdata", help="Input profile", required=True)
 args = parser.parse_args()
 
-prof = rt.stars.load_mesa_profile(args.inputdata)
+star = rytools.stars.MesaProfile(args.inputdata)
 
-# Planet masses (cgs)
-mps = np.array([1, 10, 80]) * cgs['MJUP']
-# Planet radii (cgs)
-rps = np.array([r_of_m(mp / cgs['MJUP']) for mp in mps]) * cgs['RJUP']
-
-core_idx = rt.stars.post_main_sequence_core_idx(rho=prof['rho'], x_h1=prof['x_h1'], criterion='hydrogen_mass_fraction')
-# Binding energy from r to infinity
-ebind_above = np.empty(prof['n'])
-for k in range(prof['n']):
-  ebind_above[k] = rt.stars.binding_energy(r = prof['r'], rho = prof['rho'], menc = prof['menc'], idx0 = k, idx1 = -1)
+companion_masses = np.array([1, 10, 80]) * unyt.m_jup
+companions = [rytools.planets.SubstellarBody(
+    mass) for mass in companion_masses]
 
 # Secondary axis with orbital separation
-def m_of_a(a):
-  try:
-    if len(a) > 1:
-      out = np.empty_like(a)
-      for out_idx in range(len(out)):
-       closest_idx, _ = rt.nearest(prof['r'], a[out_idx] * cgs['RSUN'])
-       out[out_idx] = prof['menc'][closest_idx]
-  except:
-    out = prof['menc'][rt.nearest(prof['r'], a * cgs['RSUN'])[0]]
-  return out / cgs['MSUN']
+
+
+def m_of_a(separations):
+    # if not isinstance(separations, collections.abc.Iterable):
+
+    masses = np.empty_like(separations)
+    for idx, separation in enumerate(separations):
+        closest_idx, _ = rytools.nearest(
+            star.r.to(unyt.r_sun).value,
+            separation
+        )
+        masses[idx] = star.enclosed_mass[closest_idx].to(unyt.m_sun)
+    # else
+    #     out = prof.m_enc[rt.nearest(prof['r'], a * cgs['RSUN'])[0]]
+    # return out
+    return masses
+
 
 def a_of_m(mval):
-  if type(mval) == np.ndarray:
+    # print(type(mval))
+    # exit(0)
+    # if type(mval) == np.ndarray:
     out = np.empty_like(mval)
     for out_idx in range(len(out)):
-     closest_idx, _ = rt.nearest(prof['menc'], mval[out_idx] * cgs['MSUN'])
-     out[out_idx] = prof['r'][closest_idx]
-  else: out = prof['r'][rt.nearest(prof['menc'], mval * cgs['MSUN'])[0]]
-  return out / cgs['RSUN']
+        closest_idx, _ = rytools.nearest(
+            star.enclosed_mass.to(unyt.m_sun).value, mval[out_idx])
+        out[out_idx] = star.r[closest_idx].to(unyt.r_sun)
+    # else:
+    #     out = prof['r'][rt.nearest(prof['menc'], mval * cgs['MSUN'])[0]]
+    # return out / cgs['RSUN']
+    return out
 
-fig, ax = plt.subplots()
-ax.plot(prof['r'] / cgs['RSUN'], - ebind_above, label = r'$E_\text{bind}\lp>a\rp$', color = 'black')
-cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
 
-for mpidx, mp in enumerate(mps):
+fig = matplotlib.figure.Figure()
+axis = fig.add_subplot()
 
-  # Compute change in orbital energy
-  eorb0 = - cgs['G'] * prof['menc'][-1] * mp / 2 / prof['r'][-1]
-  eorbf = - cgs['G'] * prof['menc']     * mp / 2 / prof['r']
-  delta_eorb = eorbf - eorb0
-  ebind_ra = np.empty(prof['n'])
+axis.plot(
+    star.r.to(unyt.r_sun),
+    - star.e_bind_outer_including_thermal.to(unyt.erg),
+    # - star.e_bind_outer.to(unyt.erg),
+    label=r'$E_\text{bind}^*$',
+    color='black'
+)
 
-  destruction_idx_ram_pressure = rt.planets.ram_pressure_disruption_idx(prof['r'], prof['rho'], mp, rps[mpidx])
-  destruction_idx_tides = rt.planets.tidal_disruption_idx(prof['r'], prof['rho'], mp, rps[mpidx])
-  destruction_idx = np.amax(np.array([destruction_idx_ram_pressure, destruction_idx_tides]))
+color_cycle = matplotlib.rcParams['axes.prop_cycle'].by_key()['color']
 
-  ax.plot(prof['r'][destruction_idx+1:] / cgs['RSUN'], - delta_eorb[destruction_idx+1:], label = r'$\Delta E_\text{orb}\lp' + str(int(mp/cgs['MJUP'])) + r'M_\text{J}\rp$', color = cycle[mpidx])
-  ax.plot(prof['r'][:destruction_idx+1] / cgs['RSUN'], - delta_eorb[:destruction_idx+1], ls = 'dotted', color = cycle[mpidx])
+for color, companion in zip(color_cycle, companions):
+    ce = rytools.planets.AnalyticalCommonEnvelope(star, companion)
 
-ax.set_yscale('log')
-ax.set_xlim(1e-1, None)
-ax.set_xscale('log')
-ax.set_ylim(1e44, 1e49)
-ax.set_xlabel(r'$a / R_\odot$')
-ax.set_ylabel(r'$-E$ $\ls \unit{\erg} \rs$')
-ax.tick_params(which = 'both', direction = 'in')
+    axis.plot(
+        ce.star.r[ce.companion_destruction_idx + 1:].to(unyt.r_sun),
+        - ce.delta_e_orb[ce.companion_destruction_idx + 1:].to(unyt.erg),
+        label=r'$\Delta E_\text{orb}^*\lp'
+              f'{int(companion.mass.to(unyt.m_jup).value)}'
+              r'M_\text{Jup}\rp$',
+        color=color
+    )
 
-ax2 = ax.twiny()
-ax2.set_xlim(ax.get_xlim())
-ax2.set_xscale('log')
-avals = np.array([1e0, 1e1, 1e2])
+    axis.plot(
+        ce.star.r[:ce.companion_destruction_idx + 1].to(unyt.r_sun),
+        - ce.delta_e_orb[:ce.companion_destruction_idx + 1].to(unyt.erg),
+        ls='dotted',
+        color=color
+    )
+
+    # axis.plot(
+    #     ce.star.r.to(unyt.r_sun),
+    #     - ce.envelope_binding_energy.to(unyt.erg),
+    #     # label=r'$\Delta E_\text{orb}\lp'
+    #     #   f'{int(companion.mass.to(unyt.m_jup).value)}'
+    #     #   r'M_\text{Jup}\rp$',
+    #     color='red'
+    # )
+
+axis.axvline(star.core_radius().to(unyt.r_sun), ls='dashed', color='grey')
+axis.text(0.0225, 1.5e45, 'Core-envelope boundary',
+          rotation=90, va='center', ha='center')
+
+axis.axhline(
+    - star.e_bind_outer_including_thermal[star.core_idx()].to(unyt.erg),
+    # - star.e_bind_outer[star.core_idx()].to(unyt.erg),
+    ls='dashed',
+    color='black'
+)
+
+axis.text(70, 3.5e46, 'Envelope binding energy',
+          va='center', ha='center')
+
+axis.set_xscale('log')
+axis.set_yscale('log')
+axis.set_xlim(1e-2, None)
+axis.set_ylim(1e44, 1e49)
+axis.set_xlabel(r'Orbital separation $\ls R_\odot \rs$')
+axis.set_ylabel(r'$-\text{Energy}$ $\ls \unit{\erg} \rs$')
+
+secax = axis.secondary_xaxis('top', functions=(m_of_a, a_of_m))
+
+avals = np.array([1e-2, 1e-1, 1e0, 1e1, 1e2])
 mvals = m_of_a(avals)
-ax2.set_xticks(avals)
-ax2.set_xticklabels(["%.2f" % i for i in mvals ])
-ax2.tick_params(which = 'both', direction = 'in')
-ax2.minorticks_off()
-ax2.set_xlabel(r'$M_\text{enc} / M_\odot$', labelpad = 10)
+secax.set_xticks(mvals)
+secax.set_xticklabels([f"{mass:.3f}" for mass in mvals])
+secax.minorticks_off()
+secax.set_xlabel(r'Enclosed mass $\ls M_\odot \rs$')
 
-ax.legend(loc = 0, ncol = 2)
+axis.legend(loc='upper right', ncol=2)
 
-plt.tight_layout()
-plt.savefig('3.pdf', bbox_inches = 'tight')
-plt.close()
+fig.savefig('plots/standard_energy_formalism.pdf')

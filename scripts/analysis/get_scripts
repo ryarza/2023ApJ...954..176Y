@@ -1,0 +1,6 @@
+scp lux:/home/rcastroy/src/planets-wind-tunnel/code/compare_inspirals.py .
+scp lux:/home/rcastroy/src/planets-wind-tunnel/code/grid_compare_luminosities.py .
+scp lux:/home/rcastroy/src/planets-wind-tunnel/code/interpolate_drag_into_regular_grid.py .
+scp lux:/home/rcastroy/src/planets-wind-tunnel/code/measure_drag_coefficients.py .
+scp lux:/home/rcastroy/src/planets-wind-tunnel/code/outcomes.py .
+scp lux:/home/rcastroy/src/planets-wind-tunnel/code/rp_over_ra_at_destruction.py .

@@ -1,95 +1,186 @@
-import numpy as np
-import matplotlib.pyplot as plt
-import yt
-import rytools as rt
+"""Plot the parameter space explored by a engulfed substellar companion."""
 import argparse
+import pathlib
+import matplotlib
+import matplotlib.style
+import numpy as np
+import numpy.typing as npt
+import rytools as rt
+import rytools.units
+import rytools.cewt
+import unyt
 
-#Input argument: directory to analyze
+matplotlib.style.use('~/.config/matplotlib/style.mplstyle')
+
+GRID_PATH = pathlib.Path('data/large_sims/parameter_space/')
+assert pathlib.Path(GRID_PATH).is_dir()
+
+
 parser = argparse.ArgumentParser()
-parser.add_argument("-i", "--inputdata", help = "Directory with simulations", required = True)
+parser.add_argument(
+    "-i",
+    "--input",
+    help="Input file",
+    required=False,
+    type=pathlib.Path,
+    default=pathlib.Path('data/dimensionless_parameter_space.h5')
+)
+
 args = parser.parse_args()
 
-rt.plot.plottex(fontsize = 17.28 * 0.75 * (16.35 * 13.7) / 12 / 10.5 )
 
-qs = np.logspace(-3, -1, 4)
-rp_over_ras = np.logspace(np.log10(0.3), 0, 4)
-eps_rhos = np.logspace(-1, 0, 4)
+def points_in_parameter_space(mass_ratio: npt.NDArray[np.float64],
+                              eps_rho: npt.NDArray[np.float64],
+                              rp_over_ra: npt.NDArray[np.float64]) -> tuple:
+    # mask = np.where(
+    #     (eps_rho < 1.5 * pow(q, 0.9)) &
+    #     (eps_rho < 6 * pow(q, 0.425)) &
+    #     (rp_over_ra < 0.5 * pow(q, - 2 / 3)) &
+    #     (rp_over_ra < 0.1 * (1 + 1 / q)) &
+    #     (rp_over_ra < 125 * pow(eps_rho, 0.9))
+    # )
+    mask = (rp_over_ra < 0.5 * pow(mass_ratio, - 2 / 3)) &\
+        (rp_over_ra < 0.1 * (1 + 1 / mass_ratio)) &\
+        (eps_rho < 6 * pow(mass_ratio, 0.425)) &\
+        (eps_rho > 1.5 * pow(mass_ratio, 0.9)) &\
+        (rp_over_ra < 125 * pow(eps_rho, 0.9)) &\
+        (rp_over_ra > 4.8e-3 * pow(eps_rho, -0.9)) &\
+        (rp_over_ra < 4.8 * pow(eps_rho, -1.5)
+         )
+    return mass_ratio[mask], eps_rho[mask], rp_over_ra[mask]
 
-rp_over_ra = rp_over_ras[0]
 
-plotTime = 25
-plotFile = 100
-resolution = 1024
+def main():
+    """Do main calculation."""
+    print(f"Plotting {args.input}")
 
-fig, ax = plt.subplots(ncols = len(qs), nrows = len(eps_rhos), constrained_layout = True, figsize = (16.35, 13.7))
+    d = rt.h5_to_dict(args.input)
+    d['sb_masses'] = d['sb_masses'] * unyt.m_jup
+    d['max_stellar_radii'] = d['max_stellar_radii'] * unyt.r_sun
+    print("Loading simulation grid...")
+    grid = rytools.cewt.SimulationGrid(GRID_PATH)
+    print("Loaded simulation grid...")
+    q = grid["sim_q"]
+    eps_rho = grid.eps_rho
+    rp_over_ra = grid["sim_radius"]
 
-for idx_q, q in enumerate(qs):
-  print("Plotting simulations with q = %.2e" % float(q))
-  for idx_eps_rho, eps_rho in enumerate(eps_rhos):
-    print("  Plotting eps_rho = %.2f" % float(eps_rho))
-    simDirectory = args.inputdata + 'q-%.5e/eps_rho-%.5e/rsb_over_ra-%.5e/' % ( q, eps_rho, rp_over_ra )
-    cax = ax[idx_eps_rho, idx_q]
-    cax.set_aspect(1)
-    cax.tick_params(which = 'both', direction = 'in')
-    if idx_eps_rho < len(eps_rhos) - 1: cax.xaxis.set_ticklabels([])
-    else: cax.set_xlabel(r'$x/R_a$')
-    if idx_q > 0: cax.yaxis.set_ticklabels([])
-    else: cax.set_ylabel(r'$y/R_a$')
-    x_0, y_0, x_1, y_1 = -4, -4, 4, 4
-    pixels_x = resolution
-    pixels_y = int(pixels_x * ( y_1 - y_0 ) / ( x_1 - x_0 ) )
-    x = np.linspace(x_0, x_1, pixels_x)
-    y = np.linspace(y_0, y_1, pixels_y)
+    prop_cycle = matplotlib.rcParams['axes.prop_cycle']
+    colors = prop_cycle.by_key()['color']
+    linestyles = ['solid', 'dotted', 'dashed', 'dashdot']
 
-    try:
-      ds = yt.load(simDirectory + 'acc_hdf5_chk_' + str(plotFile).zfill(4))
-      if np.abs(float(ds.current_time) / plotTime - 1) > 1e-1:
-        plotFile = round(plotTime * plotTime / float(ds.current_time))
-        ds = yt.load(simDirectory + 'acc_hdf5_chk_' + str(plotFile).zfill(4))
-        assert np.abs(float(ds.current_time) / plotTime - 1) < 1e-2, "Couldn't find checkpoint file at requested time"
-      
-      slc = ds.slice("z", 0)
+    q, eps_rho, rp_over_ra =\
+        points_in_parameter_space(q, eps_rho, rp_over_ra)
 
-      frb = yt.visualization.fixed_resolution.FixedResolutionBuffer(slc, (x_0, x_1, y_0, y_1), (pixels_x, pixels_y))
+    fig = matplotlib.figure.Figure()
+    ax = fig.add_subplot()
+    for i in range(d["q"].shape[0]):
+        for j in range(d["q"].shape[1]):
+            ax.plot(d["q"][i, j], d["eps_rho"][i, j],
+                    lw=0.75, ls=linestyles[i], color=colors[j])
+            ax.plot(d["q"][i, j][0], d["eps_rho"][i, j][0],
+                    marker='^', color=colors[j], markersize=2.5)
 
-      rho = np.array(frb["gas", "density"]).T
-      bdry_var = np.array(frb['flash', 'bdry']).T
-      vel_x = np.array(frb['gas', 'velocity_x']).T
-      vel_y = np.array(frb['gas', 'velocity_y']).T
-      vel_z = np.array(frb['gas', 'velocity_z']).T
+    ax.scatter(q, eps_rho, marker="s", s=12,
+               facecolor='none', edgecolor='black', lw=0.75)
 
-      rho[bdry_var > 0] = np.nan
+    ax.loglog()
+#    ax.legend(loc=0)
+    ax.set_xlabel("$q$")
+    ax.autoscale(enable=False)
+    ax.fill_between([1 / 9, ax.get_xlim()[1]], *
+                    ax.get_ylim(), color='gray', alpha=0.3, lw=0)
+    ax.set_ylabel(r"$\varepsilon_\rho$")
+    fig.savefig("plots/q_vs_eps_rho.pdf")
 
-    except Exception as e:
-      print(e)
-      rho = np.ones((len(x), len(y)))
-      vel_x = 1 * rho
-      vel_y = 0 * rho
-      vel_z = 0 * rho
-      bdry_var = -1 * rho
+    fig = matplotlib.figure.Figure()
+    ax = fig.add_subplot()
+    ax.loglog()
+    custom_lines = [matplotlib.lines.Line2D(
+        [0], [0], color='black', ls=ls) for ls in linestyles]
+    for i in range(d["q"].shape[0]):
+        for j in range(d["q"].shape[1]):
+            ax.plot(d["q"][i, j], d["rp_over_ra"]
+                    [i, j], color=colors[j], lw=0.75, ls=linestyles[i])
+            ax.plot(d["q"][i, j][0], d["rp_over_ra"][i, j][0],
+                    marker='^', color=colors[j], markersize=2.5)
 
-    vel_abs = np.sqrt(vel_x * vel_x + vel_y * vel_y + vel_z * vel_z)
-    vel_abs[bdry_var > 0] = 0
+    ax.scatter(q, rp_over_ra, marker="s", s=12,
+               facecolor='none', edgecolor='black', lw=0.75)
+    ax.legend(custom_lines, [
+              rf'$R_\star={int(r)}R_\odot$' for r in d["max_stellar_radii"]])
+    qs = np.logspace(-3, np.log10(1 / 9))
+#    y = 0.5 * pow(qs, -2 / 3)
+#    ax.plot(qs, y, ls="dashed")
+#    ax.plot(qs, 0.1 * (1 + 1 / qs), ls="dashed", color='black')
+#    ax.vlines(1 / 9, ymin=1e-3, ymax=1, ls='dashed', color='black')
+    ax.set_ylim(1e-3, 1e2)
+    ax.set_xlabel("$q$")
+    ax.set_ylabel(r"$R_\text{SB}/R_a$")
+    ax.autoscale(enable=False)
+    ax.text(1e-1, 30, 'Region not suitable for\nwind tunnel simulations',
+            ha='center', va='center')
+    ax.fill_between(qs, 0.1 * (1 + 1 / qs), ax.get_ylim()
+                    [1], color='gray', alpha=0.3, lw=0)
+    ax.fill_between([1 / 9, ax.get_xlim()[1]], *
+                    ax.get_ylim(), color='gray', alpha=0.3, lw=0)
+    ax.fill_between(
+        [*ax.get_xlim()],
+        [ax.get_ylim()[0]] * 2,
+        [0.2] * 2,
+        color='blue',
+        alpha=0.1,
+        lw=0
+    )
+#    ax.text(6e-3, 6e-3, "Gravitational regime.\n"
+#            r"Drag independent of $R_\text{SB}/R_a$",
+#            ha='center', fontsize='x-large')
+    fig.savefig("plots/q_vs_rp_over_ra.pdf")
 
-    x_pcm, y_pcm, rho_pcm = rt.plot.pointsToPcolormeshArgs(x, y, rho)
-    # Background color
-    cax.set_facecolor("black")
+    fig = matplotlib.figure.Figure()
+    ax = fig.add_subplot()
+    for j in range(d["q"].shape[1]):
+        for i in range(d["q"].shape[0]):
+            ax.plot(d["eps_rho"][i, j], d["rp_over_ra"]
+                    [i, j], color=colors[j], lw=0.75, ls=linestyles[i])
+            ax.plot(d["eps_rho"][i, j][0], d["rp_over_ra"][i, j][0],
+                    marker='^', color=colors[j], markersize=2.5)
+        ax.text(d["eps_rho"][-1, j][0] * 1.4, d["rp_over_ra"][-1, j][0],
+                f"${round(float(d['sb_masses'][j].value))}"
+                r"M_\text{Jup}$", color=colors[j], ha='center', va='center')
 
-    cax.set_xlim(x_0, x_1)
-    cax.set_ylim(y_0, y_1)
-    pcm = cax.pcolormesh(x_pcm, y_pcm, np.log10(rho_pcm), vmin = -2, vmax = 1, rasterized = True, cmap = 'inferno')
-    lw = 2 * vel_abs / np.amax(vel_abs)
-    cax.streamplot(x, y, vel_x.T, vel_y.T, linewidth = lw.T, color = 'black')
+    ax.scatter(eps_rho, rp_over_ra, marker="s", s=12,
+               facecolor='none', edgecolor='black', lw=0.75)
 
-    q_n2 = np.floor(np.log10(q))
-    q_n1 = q / pow(10, q_n2)
-    cax.plot([0], [0], visible = False, label = r'$\varepsilon_\rho = %.2f, q = %.1f\times10^{%i}$' % ( eps_rho, q_n1, q_n2) )
-    leg = cax.legend(handlelength=0, handletextpad=0, loc = 'upper left', fontsize = 'xx-large')
-    for item in leg.legendHandles:
-      item.set_visible(False)
+    ax.set_xscale('log')
+    ax.set_yscale('log')
 
-cbar = fig.colorbar(pcm, ax=ax.ravel().tolist(), aspect = 30, label = r'$\log_{10} \lp \rho / \rho_\infty \rp$', shrink = 0.99)
-cbar.ax.tick_params(which = 'both', direction = 'in')
+    ax.autoscale(enable=False)
 
-plt.savefig('8.pdf', bbox_inches = 'tight')
-plt.close()
+    ax.fill_between(
+        [*ax.get_xlim()],
+        [ax.get_ylim()[0]] * 2,
+        [0.2] * 2,
+        color='blue',
+        alpha=0.1,
+        lw=0
+    )
+
+    ax.text(
+        2e-2,
+        1e-2,
+        'Gravitational regime\n'
+        r'Weak dependence on $R_\text{SB}/R_a$',
+        ha='center',
+        va='center'
+    )
+#    ax.fill_between(np.linspace(*ax.get_xlim()),
+#                    ax.get_ylim()[0], 0.3, color='blue', alpha=0.3)
+#    ax.fill_between(np.linspace(*ax.get_xlim()), 5,
+#                    ax.get_ylim()[1], color='green', alpha=0.3)
+
+    ax.set_xlabel(r"$\varepsilon_\rho$")
+    ax.set_ylabel(r"$R_\text{SB}/R_a$")
+    fig.savefig("plots/eps_rho_vs_rp_over_ra.pdf")
+
+
+main()

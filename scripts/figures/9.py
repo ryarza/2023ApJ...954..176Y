@@ -1,74 +1,95 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import argparse
+import yt
 import rytools as rt
-import matplotlib
+import argparse
 
-rt.plot.plottex()
-cgs = rt.units.get_cgs(source = 'MESA')
-
+#Input argument: directory to analyze
 parser = argparse.ArgumentParser()
-parser.add_argument("-i", "--inputdata", help = "Directory with data", required = True)
+parser.add_argument("-i", "--inputdata", help = "Directory with simulations", required = True)
 args = parser.parse_args()
 
-masses = np.array([1, 10, 50, 80], dtype = int)
-r_of_m = rt.planets.mass_radius_relation()
-radii = r_of_m(masses) * cgs['RJUP']
-models = ['total']
-colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
-lss = ['dashed', 'solid']
+rt.plot.plottex(fontsize = 17.28 * 0.75 * (16.35 * 13.7) / 12 / 10.5 )
 
-data = {}
-data['analytical'] = {}
-data['numerical'] = {}
+qs = np.logspace(-3, -1, 4)
+rp_over_ras = np.logspace(np.log10(0.3), 0, 4)
+eps_rhos = np.logspace(-1, 0, 4)
 
-data['analytical'] = np.empty(len(masses), dtype = dict)
-data['numerical'] = np.empty(len(masses), dtype = dict)
-for i in range(len(masses)):
-    data['analytical'][i] = {}
-    data['numerical'][i] = {}
+rp_over_ra = rp_over_ras[0]
 
-nsamples = [-1, -1, -1, -1]
-samples = [False] * 4
+plotTime = 25
+plotFile = 100
+resolution = 1024
 
-# Load data and compute
-for midx, mass in enumerate(masses):
-    for model_idx, model in enumerate(models):
-        sim_path = args.inputdata + "inspirals/analytical-drag/%s/" % mass
-        data['analytical'][midx][model] = rt.planets.load_orbint_output(sim_path + 'output-%s.txt' % model, sim_path + 'scalars.txt', profile_path = args.inputdata + '10rsun_profile.data', sample = samples[midx], nsamples = nsamples[midx], compute_derived = {'deltae_from_forces': False, 'L_emergent': False})
-        sim_path = args.inputdata + "inspirals/numerical-drag/%s/" % mass
-        data['numerical'][midx][model] = rt.planets.load_orbint_output(sim_path + 'output-%s.txt' % model, sim_path + 'scalars.txt', profile_path = args.inputdata + '10rsun_profile.data', sample = samples[midx], nsamples = nsamples[midx], compute_derived = {'deltae_from_forces': False, 'L_emergent': False})
+fig, ax = plt.subplots(ncols = len(qs), nrows = len(eps_rhos), constrained_layout = True, figsize = (16.35, 13.7))
 
-# Plot
-fig, ax = plt.subplots()
-for midx, mass in enumerate(masses):
-    for model_idx, model in enumerate(models):
-        if model_idx == len(models) - 1: legend = str(mass) + r'$M_\text{Jup}$'
-        else: legend = None
-        d = data['analytical'][midx][model]
-        ax.plot(d['r'][d['survived']] / cgs['RSUN'], - d['edot_from_forces']['total'][d['survived']], color = colors[midx], ls = 'dashed')
-        ax.plot(d['r'][d['destroyed']['total']] / cgs['RSUN'], - d['edot_from_forces']['total'][d['destroyed']['total']], color = colors[midx], alpha = 0.2, ls = 'dashed')
-        d = data['numerical'][midx][model]
-        ax.plot(d['r'][d['survived']] / cgs['RSUN'], - d['edot_from_forces']['total'][d['survived']], color = colors[midx], label = legend)
-        ax.plot(d['r'][d['destroyed']['total']] / cgs['RSUN'], - d['edot_from_forces']['total'][d['destroyed']['total']], color = colors[midx], alpha = 0.2)
+for idx_q, q in enumerate(qs):
+  print("Plotting simulations with q = %.2e" % float(q))
+  for idx_eps_rho, eps_rho in enumerate(eps_rhos):
+    print("  Plotting eps_rho = %.2f" % float(eps_rho))
+    simDirectory = args.inputdata + 'q-%.5e/eps_rho-%.5e/rsb_over_ra-%.5e/' % ( q, eps_rho, rp_over_ra )
+    cax = ax[idx_eps_rho, idx_q]
+    cax.set_aspect(1)
+    cax.tick_params(which = 'both', direction = 'in')
+    if idx_eps_rho < len(eps_rhos) - 1: cax.xaxis.set_ticklabels([])
+    else: cax.set_xlabel(r'$x/R_a$')
+    if idx_q > 0: cax.yaxis.set_ticklabels([])
+    else: cax.set_ylabel(r'$y/R_a$')
+    x_0, y_0, x_1, y_1 = -4, -4, 4, 4
+    pixels_x = resolution
+    pixels_y = int(pixels_x * ( y_1 - y_0 ) / ( x_1 - x_0 ) )
+    x = np.linspace(x_0, x_1, pixels_x)
+    y = np.linspace(y_0, y_1, pixels_y)
 
+    try:
+      ds = yt.load(simDirectory + 'acc_hdf5_chk_' + str(plotFile).zfill(4))
+      if np.abs(float(ds.current_time) / plotTime - 1) > 1e-1:
+        plotFile = round(plotTime * plotTime / float(ds.current_time))
+        ds = yt.load(simDirectory + 'acc_hdf5_chk_' + str(plotFile).zfill(4))
+        assert np.abs(float(ds.current_time) / plotTime - 1) < 1e-2, "Couldn't find checkpoint file at requested time"
+      
+      slc = ds.slice("z", 0)
 
-ax.set_xscale('log')
+      frb = yt.visualization.fixed_resolution.FixedResolutionBuffer(slc, (x_0, x_1, y_0, y_1), (pixels_x, pixels_y))
 
-ax.set_xlim(1e-1, 1e1)
-ax.set_ylim(1e36, 1e44)
+      rho = np.array(frb["gas", "density"]).T
+      bdry_var = np.array(frb['flash', 'bdry']).T
+      vel_x = np.array(frb['gas', 'velocity_x']).T
+      vel_y = np.array(frb['gas', 'velocity_y']).T
+      vel_z = np.array(frb['gas', 'velocity_z']).T
 
-handles, labels = ax.get_legend_handles_labels()
-line = matplotlib.lines.Line2D([0], [0], color='black', ls = 'dashed', label = 'Analytical drag')
-handles.insert(0,line) 
-line = matplotlib.lines.Line2D([0], [0], color='black', label = 'Numerical drag')
-handles.insert(0,line) 
+      rho[bdry_var > 0] = np.nan
 
-ax.legend(handles = handles, loc = 'lower left', ncol = 2)
-ax.tick_params(which = 'both', direction = 'in')
-ax.set_yscale('log')
-ax.set_xlabel(r'$a/R_\odot$')
-ax.set_ylabel(r'$\dot{E}$ $\ls\si{\erg\per\second}\rs$')
-plt.tight_layout()
-plt.savefig('9.pdf', bbox_inches = 'tight')
+    except Exception as e:
+      print(e)
+      rho = np.ones((len(x), len(y)))
+      vel_x = 1 * rho
+      vel_y = 0 * rho
+      vel_z = 0 * rho
+      bdry_var = -1 * rho
+
+    vel_abs = np.sqrt(vel_x * vel_x + vel_y * vel_y + vel_z * vel_z)
+    vel_abs[bdry_var > 0] = 0
+
+    x_pcm, y_pcm, rho_pcm = rt.plot.pointsToPcolormeshArgs(x, y, rho)
+    # Background color
+    cax.set_facecolor("black")
+
+    cax.set_xlim(x_0, x_1)
+    cax.set_ylim(y_0, y_1)
+    pcm = cax.pcolormesh(x_pcm, y_pcm, np.log10(rho_pcm), vmin = -2, vmax = 1, rasterized = True, cmap = 'inferno')
+    lw = 2 * vel_abs / np.amax(vel_abs)
+    cax.streamplot(x, y, vel_x.T, vel_y.T, linewidth = lw.T, color = 'black')
+
+    q_n2 = np.floor(np.log10(q))
+    q_n1 = q / pow(10, q_n2)
+    cax.plot([0], [0], visible = False, label = r'$\varepsilon_\rho = %.2f, q = %.1f\times10^{%i}$' % ( eps_rho, q_n1, q_n2) )
+    leg = cax.legend(handlelength=0, handletextpad=0, loc = 'upper left', fontsize = 'xx-large')
+    for item in leg.legendHandles:
+      item.set_visible(False)
+
+cbar = fig.colorbar(pcm, ax=ax.ravel().tolist(), aspect = 30, label = r'$\log_{10} \lp \rho / \rho_\infty \rp$', shrink = 0.99)
+cbar.ax.tick_params(which = 'both', direction = 'in')
+
+plt.savefig('8.pdf', bbox_inches = 'tight')
 plt.close()

@@ -1,130 +1,204 @@
-import numpy as np
-import matplotlib.pyplot as plt
-import rytools as rt
-from matplotlib.ticker import FormatStrFormatter
-import matplotlib
-
 import argparse
+import pathlib
+import warnings
+import mesa_reader
+import numpy as np
+import rytools
+import rytools.planets
+import rytools.stars
+import matplotlib
+import matplotlib.figure
+import matplotlib.style
+import unyt
+
 parser = argparse.ArgumentParser()
-parser.add_argument("-i", "--inputdata", help = "Input file", required = True)
+parser.add_argument(
+    "-i", "--input",
+    help="Input folder with MESA files",
+    type=pathlib.Path,
+    default=pathlib.Path(
+        '/data/groups/ramirez-ruiz/rcastroy/mesa/'
+        'grid_sun_like/1.00000e+00/LOGS_to_start_he_core_flash/'
+    )
+)
+parser.add_argument(
+    "-r", "--radius",
+    help="Desired stellar radius (in rsun)",
+    type=int,
+    default=10
+)
+
 args = parser.parse_args()
 
-cgs = rt.units.get_cgs(source = 'MESA')
+matplotlib.style.use(pathlib.Path.home() / '.config/matplotlib/style.mplstyle')
 
-rt.plot.plottex()
 
-plotDir = './'
-prof = rt.stars.load_mesa_profile(args.inputdata)
+def get_star() -> rytools.stars.MesaProfile:
+    logdir = mesa_reader.MesaLogDir(args.input)
+    profile_number = rytools.nearest(logdir.history.R, args.radius)[0] + 1
+    profile_path = args.input / f"profile{profile_number}.data"
+    star = rytools.stars.MesaProfile(profile_path)
+    if not np.isclose(star.r[-1].to(unyt.r_sun).value, args.radius, rtol=1e-2):
+        warnings.warn('Close stellar radius not found')
+    return star
 
-print("Radius [RSun]: ", prof['r'][-1] / cgs['RSUN'])
-print("Luminosity [LSun]: ", prof['L'][-1] / cgs['LSUN'])
 
-prof['vkep'] = np.sqrt( cgs['GNEWT'] * prof['menc'] / prof['r'] )
-prof['mach'] = prof['vkep'] / prof['cs']
+def main() -> None:
+    star = get_star()
 
-n_points = 200
-min_idx, _ = rt.nearest(prof['r'], 0.1 * cgs['RSUN'])
-min_idx = 0
-# Range of planet masses (in Jupiter masses)
-mp = np.logspace(-2, 2, n_points) * cgs['MJUP']
-# Corresponding range of radii (in Jupiter radii)
-r_of_m = rt.planets.mass_radius_relation()
-rp = r_of_m(mp / cgs['MJUP']) * cgs['RJUP']
-# vesc from the planet
-vesc = np.sqrt( cgs['GNEWT'] * mp / rp )
-rho_p = mp / ( 4 * np.pi * pow(rp, 3) / 3 )
+    print(f"Radius: {star.r[-1]}")
+    print(f"Luminosity: {star.luminosity[-1]}")
 
-jiaspruit_f = np.outer(prof['rho'] * pow(prof['vkep'], 2), pow(rho_p * pow(vesc, 2), -1 ) )
-ra = 2 * cgs['GNEWT'] * np.outer(pow(prof['vkep'], -2), mp )
-rp_over_ra = np.outer( prof['menc'] / prof['r'], rp / mp ) / 2
-a_over_rt = np.outer(prof['r'] / pow(prof['menc'], 1/3), pow(mp, 1/3) / rp)
-epsilon_rho = np.abs(np.maximum( np.outer( 1 / prof['h_rho'], rp ), ra * np.outer( 1 / prof['h_rho'], np.ones(n_points) )))
+    n_points = 200
+    min_idx = 0
+    # Range of planet masses (in Jupiter masses)
+    companion_masses = np.logspace(-1, 2, n_points) * unyt.m_jup
+    # Corresponding range of radii (in Jupiter radii)
+    companions = [rytools.planets.SubstellarBody(mass)
+                  for mass in companion_masses]
 
-plot_x = 'a'
-if plot_x == 'mass':
-  plot_x_coord = prof['menc'] / cgs['MSUN']
-else:
-  plot_x_coord = prof['r'] / cgs['RSUN']
+    ram_disruption_separations = np.empty(len(companions))
+    tidal_disruption_separations = np.empty(len(companions))
+    destruction_separations = np.empty(len(companions))
+    epsilon_rho = np.empty((star.n_cells, len(companions)))
+    rp_over_ra = np.empty((star.n_cells, len(companions)))
+    for idx, companion in enumerate(companions):
+        ce = rytools.planets.AnalyticalCommonEnvelope(star, companion)
+        ram_disruption_separations[idx] = star.r[ce.destruction_idx_ram_pressure]
+        tidal_disruption_separations[idx] = star.r[ce.destruction_idx_tides]
+        destruction_separations[idx] = star.r[ce.companion_destruction_idx]
+        epsilon_rho[:, idx] = ce.epsilon_rho
+        rp_over_ra[:, idx] = ce.rsb_over_ra
 
-fields = {}
-fields['eps_rho'] = {}
-fields['eps_rho']['array'] = np.log10(epsilon_rho)
-fields['eps_rho']['tex_name'] = r'$\log_{10}\lp\varepsilon_\rho\rp$'
-fields['eps_rho']['contour_name'] = r'$\varepsilon_\rho = 1$'
-fields['eps_rho']['lims'] = np.array([-3, 1])
-fields['eps_rho']['cmap'] = 'viridis'
+    fields = {}
+    fields['eps_rho'] = {}
+    fields['eps_rho']['array'] = np.log10(epsilon_rho)
+    fields['eps_rho']['tex_name'] = r'$\log_{10}\lp\varepsilon_\rho\rp$'
+    fields['eps_rho']['contour_name'] = r'$\varepsilon_\rho = 1$'
+    fields['eps_rho']['lims'] = np.array([-3, 1])
+    fields['eps_rho']['cmap'] = 'viridis'
 
-fields['rp_over_ra'] = {}
-fields['rp_over_ra']['array'] = np.log10(rp_over_ra)
-fields['rp_over_ra']['tex_name'] = r'$\log_{10} \lp R_\text{SB}/R_a\rp$'
-fields['rp_over_ra']['contour_name'] = r'$R_\text{SB} = R_a$'
-fields['rp_over_ra']['lims'] = np.array([-2, 2])
-fields['rp_over_ra']['cmap'] = 'PiYG'
+    fields['rp_over_ra'] = {}
+    fields['rp_over_ra']['array'] = np.log10(rp_over_ra)
+    fields['rp_over_ra']['tex_name'] = r'$\log_{10} \lp R_\text{SB}/R_a\rp$'
+    fields['rp_over_ra']['contour_name'] = r'$R_\text{SB} = R_a$'
+    fields['rp_over_ra']['lims'] = np.array([-2, 2])
+    fields['rp_over_ra']['cmap'] = 'PiYG'
 
-for field in fields.keys():
+    # fields['mach'] = {}
+    # fields['mach']['array'] = mach
+    # fields['mach']['tex_name'] = r'Mach number'
+    # fields['mach']['contour_name'] = r'$\mathcal{M}=1$'
+    # fields['mach']['lims'] = np.array([1, 2])
+    # fields['mach']['cmap'] = 'PiYG'
 
-  fig, ax = plt.subplots()
-  
-  ax.loglog()
-  
-  # Axes limits
-  if plot_x == 'mass':
-    ax.set_xlim(0.45, 0.8)
-  else:
-    ax.set_xlim(1e-1, np.amax(prof['r'] / cgs['RSUN']))
-  ax.set_ylim(1e-2, 1e2)
-  
-  ax2 = ax.twiny()
-  ax2.tick_params(which = 'both', direction = 'in')
-  ax2.set_xlim(1e-1 * cgs['RSUN'] / cgs['AU'], np.amax(prof['r']) / cgs['AU'])
-  ax2.set_xscale('log')
-  ax2.set_xlabel(r'$a$ $\ls\unit{\astronomicalunit}\rs$', labelpad = 10)
-  
-  # Axes labels
-  if plot_x == 'mass':
-    ax.set_xlabel(r'$M_\text{enc}/M_\odot$')
-  else:
-    ax.set_xlabel(r'$a/R_\odot$')
-  ax.set_ylabel(r'$M_\text{SB} / M_\text{Jup}$')
-  
-  # Axes ticks
-  ax.minorticks_on()
-  ax.tick_params(which = 'both', direction = 'in')
-  
-  # Plot
-  x, y, z = rt.plot.pointsToPcolormeshArgs(plot_x_coord[min_idx:], mp / cgs['MJUP'], fields[field]['array'] )
-  im = ax.pcolormesh(x, y, z, edgecolors = 'face', cmap = fields[field]['cmap'], vmin = fields[field]['lims'][0], vmax = fields[field]['lims'][1], rasterized = True)
+    for field_name, field in fields.items():
+        print(f"Plotting {field_name}")
 
-  # eps_rho = 1 contour
-  xC, yC = np.meshgrid(plot_x_coord, mp /cgs['MJUP'])
-  cont4 = ax.contour(xC[:,:-500], yC[:,:-500], epsilon_rho[:-500,:].T, [1], colors = 'black', linestyles = 'dashed')
-  ax.clabel(cont4, cont4.levels, fmt = r"$\varepsilon_\rho=1$", manual = [(.2, .2)], colors = 'black', fontsize = 'xx-large', use_clabeltext = True, inline_spacing = 8)
-  
-  # rp_over_ra = 1 contour
-  cont = ax.contour(xC, yC, rp_over_ra.T, [1], colors = 'black', linestyles = 'dashed')
-  ax.clabel(cont, cont.levels, fmt = r"$R_\text{SB} = R_a$", manual = [(3, 20)], colors = 'black', fontsize = 'xx-large', use_clabeltext = True, inline_spacing = 8)
-  
-  # a = Rt contour
-  cont2 = ax.contour(xC, yC, a_over_rt.T, [1], colors = 'black', linestyles = 'dotted')
-  ax.clabel(cont2, cont2.levels, fmt = r"$a = R_t$", manual = [(.5, 2)], colors = 'black', fontsize = 'xx-large', use_clabeltext = True, inline_spacing = 8)
-  
-  # rho v^2 = rho_p vesc^2
-  cont3 = ax.contour(xC, yC, jiaspruit_f.T, [1], colors = 'black', linestyles = 'dotted')
-  ax.clabel(cont3, cont3.levels, fmt = r"$f=1$", manual = [(.15, 2)], colors = 'black', fontsize = 'xx-large', use_clabeltext = True, inline_spacing = 8)
+        fig = matplotlib.figure.Figure()
+        axis = fig.add_subplot()
 
-  if field == 'rp_over_ra':  
-    ax.text(20, 20, 'Gravitational regime', fontsize = 'x-large', horizontalalignment = 'center')
-    ax.text(20, 0.1, 'Geometrical regime', fontsize = 'x-large', horizontalalignment = 'center')
- 
-  # Colorbar
-  cbar = plt.colorbar(im, pad = 0.01)
-  cbar.set_label(fields[field]['tex_name'], rotation=90)
-  cbar.ax.tick_params(axis='y', direction='in')
-  
-  plt.tight_layout()
-  if field == 'eps_rho':
-    side = 'right'
-  else:
-    side = 'left'
-  plt.savefig('2_%s.pdf' % side, bbox_inches = 'tight')
-  plt.close()
+        axis.set_xscale('log')
+        axis.set_yscale('log')
+
+        # Axes limits
+        axis.set_xlim(1e-1, star.r[-1].to(unyt.r_sun))
+        axis.set_ylim(
+            companion_masses[0].to(unyt.m_jup),
+            companion_masses[-1].to(unyt.m_jup)
+        )
+        axis.plot(ram_disruption_separations,
+                  companion_masses.to(unyt.m_jup), ls='dashed', label='destruction', color='white')
+        axis.plot(tidal_disruption_separations,
+                  companion_masses.to(unyt.m_jup), ls='dashed', label='destruction')
+        axis.plot(destruction_separations,
+                  companion_masses.to(unyt.m_jup), label='destruction', ls='dotted', color='black')
+
+        ax2 = axis.twiny()
+        ax2.set_xlim((1e-1 * unyt.r_sun).to(unyt.au),
+                     star.r[-1].to(unyt.au))
+        ax2.set_xscale('log')
+        ax2.set_xlabel(
+            r'Orbital separation $\ls\unit{\astronomicalunit}\rs$',
+            labelpad=10
+        )
+
+        # Axes labels
+        axis.set_xlabel(r'Orbital separation $\ls R_\odot\rs$')
+        axis.set_ylabel(r'Companion mass $\ls M_\text{Jup}\rs$')
+
+        # Axes ticks
+        axis.minorticks_on()
+
+        # Plot
+        x = star.r.to(unyt.r_sun)[min_idx:]
+        y = companion_masses.to(unyt.m_jup)
+        z = field['array'].T
+        im = axis.pcolormesh(
+            x, y, z,
+            shading='nearest',
+            edgecolors='face',
+            cmap=field['cmap'],
+            vmin=field['lims'][0], vmax=field['lims'][1],
+            rasterized=True
+        )
+
+        # eps_rho = 1 contour
+        xC, yC = np.meshgrid(x, y)
+        contour = axis.contour(
+            xC[:, :-500],
+            yC[:, :-500],
+            epsilon_rho[:-500, :].T,
+            [1],
+            colors='black', linestyles='dashed'
+        )
+        axis.clabel(
+            contour,
+            contour.levels,
+            fmt=r"$\varepsilon_\rho=1$",
+            manual=[(.3, .3)],
+            colors='black',
+            fontsize='xx-large',
+            use_clabeltext=True,
+            inline_spacing=8
+        )
+
+        # rp_over_ra = 1 contour
+        cont = axis.contour(xC, yC, rp_over_ra.T, [
+            1], colors='black', linestyles='dashed')
+        axis.clabel(cont, cont.levels, fmt=r"$R_\text{SB} = R_a$", manual=[
+            (3, 20)], colors='black', fontsize='xx-large', use_clabeltext=True, inline_spacing=8)
+
+        # a = Rt contour
+        # cont2 = ax.contour(xC, yC, a_over_rt.T, [
+        #     1], colors='black', linestyles='dotted')
+        # ax.clabel(cont2, cont2.levels, fmt=r"$a = R_t$", manual=[
+        #     (.5, 2)], colors='black', fontsize='xx-large', use_clabeltext=True, inline_spacing=8)
+
+        # rho v^2 = rho_p vesc^2
+        # cont3 = ax.contour(xC, yC, jiaspruit_f.T, [
+        #     1], colors='black', linestyles='dotted')
+        # ax.clabel(cont3, cont3.levels, fmt=r"$f=1$", manual=[
+        #     (.15, 2)], colors='black', fontsize='xx-large', use_clabeltext=True, inline_spacing=8)
+
+        # mach = 1
+        # cont4 = ax.contour(xC, yC, mach.T, [1],
+        #                    colors='black', linestyles='dashed')
+        # ax.clabel(cont4, cont4.levels, fmt=r"$\mathcal{M}=1$", colors='black',
+        #           fontsize='xx-large', use_clabeltext=True, inline_spacing=8)
+
+        if field == 'rp_over_ra':
+            #    ax.text(20, 20, 'Gravitational regime', fontsize = 'x-large', horizontalalignment = 'center')
+            axis.text(3, 30, 'Gravitational regime',
+                      fontsize='x-large', horizontalalignment='center')
+            axis.text(3, 2, 'Geometrical regime', fontsize='x-large',
+                      horizontalalignment='center')
+
+        # Colorbar
+        cbar = fig.colorbar(im, pad=0.01)
+        cbar.set_label(field['tex_name'], rotation=90)
+
+        fig.savefig(f'plots/parameter_space_{field_name}_{args.radius}.pdf')
+
+
+main()

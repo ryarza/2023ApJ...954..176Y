@@ -1,67 +1,48 @@
-import numpy as np
-import csv
-import rytools
-import matplotlib.pyplot as plt
+import os
+import pathlib
 import matplotlib
-from collections import Counter
+import matplotlib.figure
+import matplotlib.style
+import numpy as np
+import pandas
+import unyt
 
-import argparse
-parser = argparse.ArgumentParser()
-parser.add_argument("-i", "--inputdata", help = "Input file", required = True)
-args = parser.parse_args()
+os.chdir(pathlib.Path(__file__).parent.parent)
+matplotlib.style.use('~/.config/matplotlib/style.mplstyle')
 
-rytools.plot.plottex()
+data = pandas.read_csv('data/planets.csv')
 
-cgs = rytools.units.get_cgs()
+data = data.rename(columns={
+    "pl_radj": "sb_radius",
+    "pl_bmassj": "sb_mass",
+    "pl_orbsmax": "orbital_separation",
+    "st_mass": "star_mass"
+})
 
-#Full file data
-with open(args.inputdata) as csvfile:
-    reader = csv.DictReader(csvfile, skipinitialspace=True)
-    d = {name: [] for name in reader.fieldnames}
-    for row in reader:
-        for name in reader.fieldnames:
-            d[name].append(row[name])
+data = data[data['sb_mass'] > 1]
+data = data.to_dict(orient='list')
 
-# New array with only masses, radius of the planet, and semimajor axis
-data = {}
+data['sb_mass'] = data['sb_mass'] * unyt.m_jup
+data['sb_radius'] = data['sb_radius'] * unyt.r_jup
+data['orbital_separation'] = data['orbital_separation'] * unyt.au
+data['star_mass'] = data['star_mass'] * unyt.m_sun
+data['keplerian_speed'] =\
+    np.sqrt(unyt.G * data['star_mass'] / data['orbital_separation'])
+data['sb_accretion_radius'] =\
+    2 * unyt.G * data['sb_mass'] / pow(data['keplerian_speed'], 2)
+data['rp_over_ra'] = data['sb_radius'] / data['sb_accretion_radius']
 
-data['Rp']    = np.array(d['pl_radj'   ], dtype = np.float64) * cgs['RJUP']
-data['Mp']    = np.array(d['pl_bmassj' ], dtype = np.float64) * cgs['MJUP']
-data['a' ]    = np.array(d['pl_orbsmax'], dtype = np.float64) * cgs['AU'  ]
-data['Mstar'] = np.array(d['st_mass'   ], dtype = np.float64) * cgs['MSUN']
+print(len(data['rp_over_ra'][data['rp_over_ra'] > 1]))
+print(len(data['rp_over_ra'][data['rp_over_ra'] < 1]))
 
-#Derived quantities
-data['vkep'] = np.sqrt( cgs['GNEWT'] * data['Mstar'] / data['a'] )
-data['Ra'] = cgs['GNEWT'] * data['Mp'] / data['vkep'] / data['vkep']
-
-#Planet mass filter
-for key in ['Rp', 'a', 'Mstar', 'vkep', 'Ra']:
-	data[key] = data[key][data['Mp'] >= ( 5 * cgs['MJUP'] )]
-data['Mp'] = data['Mp'][data['Mp'] >= ( 5 * cgs['MJUP'] ) ]
-
-#Histogram both a < 0.1 au and a > 0.1 au
-data2 = data.copy()
-for key in ['Rp', 'Mp', 'Mstar', 'vkep', 'Ra']:
-	data2[key] = data[key][data['a'] <= ( 0.1 * cgs['AU'] )]
-data2['a'] = data['a'][data['a'] <= ( 0.1 * cgs['AU'] ) ]
-
-data3 = data.copy()
-for key in ['Rp', 'Mp', 'Mstar', 'vkep', 'Ra']:
-	data3[key] = data[key][data['a'] >= ( 0.1 * cgs['AU'] )]
-data3['a'] = data['a'][data['a'] >= ( 0.1 * cgs['AU'] ) ]
-
-fig, ax = plt.subplots()
-ax.hist(2 * np.log10(data2['Rp'] / data2['Ra']), bins = np.linspace(-10, 4, 29), color = 'seagreen', alpha = 0.8, label = r'$a<\qty{e-1}{\astronomicalunit}$')
-ax.hist(2 * np.log10(data3['Rp'] / data3['Ra']), bins = np.linspace(-10, 4, 29), color = 'royalblue', alpha = 0.8, label = r'$a>\qty{e-1}{\astronomicalunit}$')
-#General plot settings
-ax.set_xlabel(r'$2\log_{10}\left(R_\text{SB}/R_a\right)$')
-ax.set_ylabel(r'$N_\text{SB}$')
-ax.set_xlim(-10, 2)
-ax.set_ylim(0, 22)
-ax.legend(loc = 0)
-ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(2))
-ax.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
-ax.tick_params(which = 'both', direction="in")
-plt.tight_layout()
-plt.savefig('1.pdf', bbox_inches = 'tight')
-plt.close()
+fig = matplotlib.figure.Figure()
+axis = fig.add_subplot()
+bins = np.logspace(-1, 2, 30)
+axis.hist(data['rp_over_ra'], bins=bins, color='seagreen', alpha=0.8)
+# ax.set_xlabel(r'$R_\text{SB}/R_a$')
+axis.set_xlabel(r'Ratio between geometrical and gravitational radii')
+axis.set_xscale('log')
+axis.set_ylabel(r'Number of exoplanets')
+axis.set_xlim(1e-1, 1e2)
+axis.set_ylim(0, 100)
+fig.savefig('plots/histogram.pdf')
